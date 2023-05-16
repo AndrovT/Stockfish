@@ -199,6 +199,35 @@ namespace Stockfish::Eval::NNUE {
           static_assert((NumLanes * LaneSize) % RegisterSize == 0);
 
           const int ideal = (NumLanes * LaneSize) / RegisterSize;
+          static_assert(ideal % 4 == 0);
+
+          if (ideal <= MaxRegisters)
+            return ideal;
+
+          // Look for the largest divisor of the ideal register count that is smaller than MaxRegisters - 1 and divisible by 4
+          for (int divisor = MaxRegisters - 2; divisor > 1; --divisor)
+            if (ideal % divisor == 0 && divisor % 4 == 0)
+              return divisor;
+          assert(false);
+      }
+
+      template <typename SIMDRegisterType,
+                typename LaneType,
+                int      NumLanes,
+                int      MaxRegisters>
+      static constexpr int BestRegisterCountPsqt()
+      {
+          #define RegisterSize  sizeof(SIMDRegisterType)
+          #define LaneSize      sizeof(LaneType)
+
+          static_assert(RegisterSize >= LaneSize);
+          static_assert(MaxRegisters <= NumRegistersSIMD);
+          static_assert(MaxRegisters > 0);
+          static_assert(NumRegistersSIMD > 0);
+          static_assert(RegisterSize % LaneSize == 0);
+          static_assert((NumLanes * LaneSize) % RegisterSize == 0);
+
+          const int ideal = (NumLanes * LaneSize) / RegisterSize;
           if (ideal <= MaxRegisters)
             return ideal;
 
@@ -211,7 +240,7 @@ namespace Stockfish::Eval::NNUE {
       }
 
       static constexpr int NumRegs     = BestRegisterCount<vec_t, WeightType, TransformedFeatureDimensions, NumRegistersSIMD>();
-      static constexpr int NumPsqtRegs = BestRegisterCount<psqt_vec_t, PSQTWeightType, PSQTBuckets, NumRegistersSIMD>();
+      static constexpr int NumPsqtRegs = BestRegisterCountPsqt<psqt_vec_t, PSQTWeightType, PSQTBuckets, NumRegistersSIMD>();
       #if defined(__GNUC__)
       #pragma GCC diagnostic pop
       #endif
@@ -227,7 +256,8 @@ namespace Stockfish::Eval::NNUE {
     static constexpr IndexType HalfDimensions = TransformedFeatureDimensions;
 
     #ifdef VECTOR
-    static constexpr IndexType TileHeight = NumRegs * sizeof(vec_t) / 2;
+    static constexpr IndexType SimdWeightWidth = sizeof(vec_t) / sizeof(WeightType);
+    static constexpr IndexType TileHeight = NumRegs * SimdWeightWidth;
     static constexpr IndexType PsqtTileHeight = NumPsqtRegs * sizeof(psqt_vec_t) / 4;
     static_assert(HalfDimensions % TileHeight == 0, "TileHeight must divide HalfDimensions");
     static_assert(PSQTBuckets % PsqtTileHeight == 0, "PsqtTileHeight must divide PSQTBuckets");
@@ -250,83 +280,66 @@ namespace Stockfish::Eval::NNUE {
       return FeatureSet::HashValue ^ (OutputDimensions * 2);
     }
 
+    /*
+      Interleave first halve and second halve.
+    */
+    // 0 1 2 3 4 5 6 7
+    // 0 4 1 5 2 6 3 7
+    static IndexType get_weight_index(IndexType i) {
+  #ifdef VECTOR
+      auto col = i / HalfDimensions;
+      auto j = i % HalfDimensions;
+      auto halve = j / (HalfDimensions / 2);
+      auto chunk = j % (HalfDimensions / 2) / SimdWeightWidth;
+      auto index = j % SimdWeightWidth;
+      return col   * HalfDimensions
+           + halve * SimdWeightWidth
+           + chunk * SimdWeightWidth * 2
+           + index;
+  #else
+      return i;
+  #endif
+    }
+
+
     // Read network parameters
     bool read_parameters(std::istream& stream) {
+      for (IndexType i = 0; i < HalfDimensions; ++i)
+        biases[get_weight_index(i)] = read_little_endian<BiasType>(stream);
 
-      read_little_endian<BiasType      >(stream, biases     , HalfDimensions                  );
-      read_little_endian<WeightType    >(stream, weights    , HalfDimensions * InputDimensions);
-      read_little_endian<PSQTWeightType>(stream, psqtWeights, PSQTBuckets    * InputDimensions);
+      for (IndexType i = 0; i < HalfDimensions * InputDimensions; ++i)
+        weights[get_weight_index(i)] = read_little_endian<WeightType>(stream);
+
+      read_little_endian<PSQTWeightType>(stream, psqtWeights, PSQTBuckets * InputDimensions);
 
       return !stream.fail();
     }
 
     // Write network parameters
     bool write_parameters(std::ostream& stream) const {
+      for (IndexType i = 0; i < HalfDimensions; ++i)
+        write_little_endian<BiasType>(stream, biases[get_weight_index(i)]);
 
-      write_little_endian<BiasType      >(stream, biases     , HalfDimensions                  );
-      write_little_endian<WeightType    >(stream, weights    , HalfDimensions * InputDimensions);
-      write_little_endian<PSQTWeightType>(stream, psqtWeights, PSQTBuckets    * InputDimensions);
+      for (IndexType i = 0; i < HalfDimensions * InputDimensions; ++i)
+        write_little_endian<WeightType>(stream, weights[get_weight_index(i)]);
+
+      write_little_endian<PSQTWeightType>(stream, psqtWeights, PSQTBuckets * InputDimensions);
 
       return !stream.fail();
     }
 
     // Convert input features
     std::int32_t transform(const Position& pos, OutputType* output, int bucket) const {
-      update_accumulator<WHITE>(pos);
-      update_accumulator<BLACK>(pos);
+      update_accumulator<WHITE>(pos, &output[pos.side_to_move() * HalfDimensions / 2]);
+      update_accumulator<BLACK>(pos, &output[~pos.side_to_move() * HalfDimensions / 2]);
 
       const Color perspectives[2] = {pos.side_to_move(), ~pos.side_to_move()};
-      const auto& accumulation = pos.state()->accumulator.accumulation;
       const auto& psqtAccumulation = pos.state()->accumulator.psqtAccumulation;
 
       const auto psqt = (
             psqtAccumulation[perspectives[0]][bucket]
           - psqtAccumulation[perspectives[1]][bucket]
         ) / 2;
-
-
-      for (IndexType p = 0; p < 2; ++p)
-      {
-          const IndexType offset = (HalfDimensions / 2) * p;
-
-#if defined(VECTOR)
-
-          constexpr IndexType OutputChunkSize = MaxChunkSize;
-          static_assert((HalfDimensions / 2) % OutputChunkSize == 0);
-          constexpr IndexType NumOutputChunks = HalfDimensions / 2 / OutputChunkSize;
-
-          vec_t Zero = vec_zero();
-          vec_t One = vec_set_16(127);
-
-          const vec_t* in0 = reinterpret_cast<const vec_t*>(&(accumulation[perspectives[p]][0]));
-          const vec_t* in1 = reinterpret_cast<const vec_t*>(&(accumulation[perspectives[p]][HalfDimensions / 2]));
-                vec_t* out = reinterpret_cast<      vec_t*>(output + offset);
-
-          for (IndexType j = 0; j < NumOutputChunks; j += 1)
-          {
-              const vec_t sum0a = vec_max_16(vec_min_16(in0[j * 2 + 0], One), Zero);
-              const vec_t sum0b = vec_max_16(vec_min_16(in0[j * 2 + 1], One), Zero);
-              const vec_t sum1a = vec_max_16(vec_min_16(in1[j * 2 + 0], One), Zero);
-              const vec_t sum1b = vec_max_16(vec_min_16(in1[j * 2 + 1], One), Zero);
-
-              const vec_t pa = vec_mul_16(sum0a, sum1a);
-              const vec_t pb = vec_mul_16(sum0b, sum1b);
-
-              out[j] = vec_msb_pack_16(pa, pb);
-          }
-
-#else
-
-          for (IndexType j = 0; j < HalfDimensions / 2; ++j) {
-              BiasType sum0 = accumulation[static_cast<int>(perspectives[p])][j + 0];
-              BiasType sum1 = accumulation[static_cast<int>(perspectives[p])][j + HalfDimensions / 2];
-              sum0 = std::max<int>(0, std::min<int>(127, sum0));
-              sum1 = std::max<int>(0, std::min<int>(127, sum1));
-              output[offset + j] = static_cast<OutputType>(sum0 * sum1 / 128);
-          }
-
-#endif
-      }
 
 #if defined(vec_cleanup)
       vec_cleanup();
@@ -365,7 +378,7 @@ namespace Stockfish::Eval::NNUE {
     //       by repeatedly applying ->previous from states_to_update[i+1] or states_to_update[i] == nullptr.
     //       computed_st must be reachable by repeatedly applying ->previous on states_to_update[0], if not nullptr.
     template<Color Perspective, size_t N>
-    void update_accumulator_incremental(const Position& pos, StateInfo* computed_st, StateInfo* states_to_update[N]) const {
+    void update_accumulator_incremental(const Position& pos, StateInfo* computed_st, StateInfo* states_to_update[N], OutputType* output) const {
       static_assert(N > 0);
       assert(states_to_update[N-1] == nullptr);
 
@@ -413,6 +426,9 @@ namespace Stockfish::Eval::NNUE {
 
       // Now update the accumulators listed in states_to_update[], where the last element is a sentinel.
 #ifdef VECTOR
+      vec_t Zero = vec_zero();
+      vec_t One = vec_set_16(127);
+
       for (IndexType j = 0; j < HalfDimensions / TileHeight; ++j)
       {
         // Load accumulator
@@ -446,6 +462,22 @@ namespace Stockfish::Eval::NNUE {
             &states_to_update[i]->accumulator.accumulation[Perspective][j * TileHeight]);
           for (IndexType k = 0; k < NumRegs; ++k)
             vec_store(&accTile[k], acc[k]);
+        }
+        if (output != nullptr) {
+          vec_t* out = reinterpret_cast<vec_t*>(&output[j * TileHeight / 2]);
+
+          for (IndexType k = 0; k < NumRegs / 4; ++k)
+          {
+            const vec_t sum0a = vec_max_16(vec_min_16(acc[k * 4 + 0], One), Zero);
+            const vec_t sum1a = vec_max_16(vec_min_16(acc[k * 4 + 1], One), Zero);
+            const vec_t sum0b = vec_max_16(vec_min_16(acc[k * 4 + 2], One), Zero);
+            const vec_t sum1b = vec_max_16(vec_min_16(acc[k * 4 + 3], One), Zero);
+
+            const vec_t pa = vec_mul_16(sum0a, sum1a);
+            const vec_t pb = vec_mul_16(sum0b, sum1b);
+
+            out[k] = vec_msb_pack_16(pa, pb);
+          }
         }
       }
 
@@ -521,6 +553,17 @@ namespace Stockfish::Eval::NNUE {
             st->accumulator.psqtAccumulation[Perspective][k] += psqtWeights[index * PSQTBuckets + k];
         }
       }
+      if (output != nullptr)
+      {
+        for (IndexType j = 0; j < HalfDimensions / 2; ++j)
+        {
+          BiasType sum0 = accumulation[static_cast<int>(perspectives[p])][j + 0];
+          BiasType sum1 = accumulation[static_cast<int>(perspectives[p])][j + HalfDimensions / 2];
+          sum0 = std::max<int>(0, std::min<int>(127, sum0));
+          sum1 = std::max<int>(0, std::min<int>(127, sum1));
+          output[j] = static_cast<OutputType>(sum0 * sum1 / 128);
+        }
+      }
 #endif
 
   #if defined(USE_MMX)
@@ -529,7 +572,7 @@ namespace Stockfish::Eval::NNUE {
     }
 
     template<Color Perspective>
-    void update_accumulator_refresh(const Position& pos) const {
+    void update_accumulator_refresh(const Position& pos, OutputType* output) const {
   #ifdef VECTOR
       // Gcc-10.2 unnecessarily spills AVX2 registers if this array
       // is defined in the VECTOR code below, once in each branch
@@ -546,6 +589,9 @@ namespace Stockfish::Eval::NNUE {
       FeatureSet::append_active_indices<Perspective>(pos, active);
 
 #ifdef VECTOR
+      vec_t Zero = vec_zero();
+      vec_t One = vec_set_16(127);
+
       for (IndexType j = 0; j < HalfDimensions / TileHeight; ++j)
       {
         auto biasesTile = reinterpret_cast<const vec_t*>(
@@ -566,6 +612,23 @@ namespace Stockfish::Eval::NNUE {
             &accumulator.accumulation[Perspective][j * TileHeight]);
         for (unsigned k = 0; k < NumRegs; k++)
           vec_store(&accTile[k], acc[k]);
+
+        if (output != nullptr) {
+          vec_t* out = reinterpret_cast<vec_t*>(&output[j * TileHeight / 2]);
+
+          for (IndexType k = 0; k < NumRegs / 4; ++k)
+          {
+            const vec_t sum0a = vec_max_16(vec_min_16(acc[k * 4 + 0], One), Zero);
+            const vec_t sum1a = vec_max_16(vec_min_16(acc[k * 4 + 1], One), Zero);
+            const vec_t sum0b = vec_max_16(vec_min_16(acc[k * 4 + 2], One), Zero);
+            const vec_t sum1b = vec_max_16(vec_min_16(acc[k * 4 + 3], One), Zero);
+
+            const vec_t pa = vec_mul_16(sum0a, sum1a);
+            const vec_t pb = vec_mul_16(sum0b, sum1b);
+
+            out[k] = vec_msb_pack_16(pa, pb);
+          }
+        }
       }
 
       for (IndexType j = 0; j < PSQTBuckets / PsqtTileHeight; ++j)
@@ -605,6 +668,18 @@ namespace Stockfish::Eval::NNUE {
         for (std::size_t k = 0; k < PSQTBuckets; ++k)
           accumulator.psqtAccumulation[Perspective][k] += psqtWeights[index * PSQTBuckets + k];
       }
+
+      if (output != nullptr)
+      {
+        for (IndexType j = 0; j < HalfDimensions / 2; ++j)
+        {
+          BiasType sum0 = accumulation[static_cast<int>(perspectives[p])][j + 0];
+          BiasType sum1 = accumulation[static_cast<int>(perspectives[p])][j + HalfDimensions / 2];
+          sum0 = std::max<int>(0, std::min<int>(127, sum0));
+          sum1 = std::max<int>(0, std::min<int>(127, sum1));
+          output[j] = static_cast<OutputType>(sum0 * sum1 / 128);
+        }
+      }
 #endif
 
   #if defined(USE_MMX)
@@ -630,16 +705,16 @@ namespace Stockfish::Eval::NNUE {
       {
         // Only update current position accumulator to minimize work.
         StateInfo* states_to_update[2] = { pos.state(), nullptr };
-        update_accumulator_incremental<Perspective, 2>(pos, oldest_st, states_to_update);
+        update_accumulator_incremental<Perspective, 2>(pos, oldest_st, states_to_update, nullptr);
       }
       else
       {
-        update_accumulator_refresh<Perspective>(pos);
+        update_accumulator_refresh<Perspective>(pos, nullptr);
       }
     }
 
     template<Color Perspective>
-    void update_accumulator(const Position& pos) const {
+    void update_accumulator(const Position& pos, OutputType* output) const {
 
       auto [oldest_st, next] = try_find_computed_accumulator<Perspective>(pos);
 
@@ -656,11 +731,11 @@ namespace Stockfish::Eval::NNUE {
         StateInfo *states_to_update[3] =
           { next, next == pos.state() ? nullptr : pos.state(), nullptr };
 
-        update_accumulator_incremental<Perspective, 3>(pos, oldest_st, states_to_update);
+        update_accumulator_incremental<Perspective, 3>(pos, oldest_st, states_to_update, output);
       }
       else
       {
-        update_accumulator_refresh<Perspective>(pos);
+        update_accumulator_refresh<Perspective>(pos, output);
       }
     }
 
