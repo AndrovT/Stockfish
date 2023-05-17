@@ -377,7 +377,7 @@ namespace Stockfish::Eval::NNUE {
     //       All states must be sequential, that is states_to_update[i] must either be reachable
     //       by repeatedly applying ->previous from states_to_update[i+1] or states_to_update[i] == nullptr.
     //       computed_st must be reachable by repeatedly applying ->previous on states_to_update[0], if not nullptr.
-    template<Color Perspective, size_t N>
+    template<Color Perspective, size_t N, bool Output>
     void update_accumulator_incremental(const Position& pos, StateInfo* computed_st, StateInfo* states_to_update[N], OutputType* output) const {
       static_assert(N > 0);
       assert(states_to_update[N-1] == nullptr);
@@ -463,7 +463,7 @@ namespace Stockfish::Eval::NNUE {
           for (IndexType k = 0; k < NumRegs; ++k)
             vec_store(&accTile[k], acc[k]);
         }
-        if (output != nullptr) {
+        if (Output) {
           vec_t* out = reinterpret_cast<vec_t*>(&output[j * TileHeight / 2]);
 
           for (IndexType k = 0; k < NumRegs / 4; ++k)
@@ -571,7 +571,7 @@ namespace Stockfish::Eval::NNUE {
   #endif
     }
 
-    template<Color Perspective>
+    template<Color Perspective, bool Output>
     void update_accumulator_refresh(const Position& pos, OutputType* output) const {
   #ifdef VECTOR
       // Gcc-10.2 unnecessarily spills AVX2 registers if this array
@@ -613,7 +613,7 @@ namespace Stockfish::Eval::NNUE {
         for (unsigned k = 0; k < NumRegs; k++)
           vec_store(&accTile[k], acc[k]);
 
-        if (output != nullptr) {
+        if (Output) {
           vec_t* out = reinterpret_cast<vec_t*>(&output[j * TileHeight / 2]);
 
           for (IndexType k = 0; k < NumRegs / 4; ++k)
@@ -705,11 +705,11 @@ namespace Stockfish::Eval::NNUE {
       {
         // Only update current position accumulator to minimize work.
         StateInfo* states_to_update[2] = { pos.state(), nullptr };
-        update_accumulator_incremental<Perspective, 2>(pos, oldest_st, states_to_update, nullptr);
+        update_accumulator_incremental<Perspective, 2, false>(pos, oldest_st, states_to_update, nullptr);
       }
       else
       {
-        update_accumulator_refresh<Perspective>(pos, nullptr);
+        update_accumulator_refresh<Perspective, false>(pos, nullptr);
       }
     }
 
@@ -731,11 +731,11 @@ namespace Stockfish::Eval::NNUE {
         StateInfo *states_to_update[3] =
           { next, next == pos.state() ? nullptr : pos.state(), nullptr };
 
-        update_accumulator_incremental<Perspective, 3>(pos, oldest_st, states_to_update, output);
+        update_accumulator_incremental<Perspective, 3, true>(pos, oldest_st, states_to_update, output);
       }
       else
       {
-        update_accumulator_refresh<Perspective>(pos, output);
+        update_accumulator_refresh<Perspective, true>(pos, output);
       }
     }
 
