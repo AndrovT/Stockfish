@@ -426,8 +426,6 @@ namespace Stockfish::Eval::NNUE {
 
       // Now update the accumulators listed in states_to_update[], where the last element is a sentinel.
 #ifdef VECTOR
-      vec_t Zero = vec_zero();
-      vec_t One = vec_set_16(127);
 
       for (IndexType j = 0; j < HalfDimensions / TileHeight; ++j)
       {
@@ -463,7 +461,10 @@ namespace Stockfish::Eval::NNUE {
           for (IndexType k = 0; k < NumRegs; ++k)
             vec_store(&accTile[k], acc[k]);
         }
-        if (Output) {
+        if (Output)
+        {
+          vec_t Zero = vec_zero();
+          vec_t One = vec_set_16(127);
           vec_t* out = reinterpret_cast<vec_t*>(&output[j * TileHeight / 2]);
 
           for (IndexType k = 0; k < NumRegs / 4; ++k)
@@ -589,8 +590,6 @@ namespace Stockfish::Eval::NNUE {
       FeatureSet::append_active_indices<Perspective>(pos, active);
 
 #ifdef VECTOR
-      vec_t Zero = vec_zero();
-      vec_t One = vec_set_16(127);
 
       for (IndexType j = 0; j < HalfDimensions / TileHeight; ++j)
       {
@@ -613,7 +612,10 @@ namespace Stockfish::Eval::NNUE {
         for (unsigned k = 0; k < NumRegs; k++)
           vec_store(&accTile[k], acc[k]);
 
-        if (Output) {
+        if (Output)
+        {
+          vec_t Zero = vec_zero();
+          vec_t One = vec_set_16(127);
           vec_t* out = reinterpret_cast<vec_t*>(&output[j * TileHeight / 2]);
 
           for (IndexType k = 0; k < NumRegs / 4; ++k)
