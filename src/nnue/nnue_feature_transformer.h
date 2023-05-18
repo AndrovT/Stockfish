@@ -185,7 +185,8 @@ namespace Stockfish::Eval::NNUE {
       template <typename SIMDRegisterType,
                 typename LaneType,
                 int      NumLanes,
-                int      MaxRegisters>
+                int      MaxRegisters,
+                int      DivisibleBy>
       static constexpr int BestRegisterCount()
       {
           #define RegisterSize  sizeof(SIMDRegisterType)
@@ -199,48 +200,16 @@ namespace Stockfish::Eval::NNUE {
           static_assert((NumLanes * LaneSize) % RegisterSize == 0);
 
           const int ideal = (NumLanes * LaneSize) / RegisterSize;
-          static_assert(ideal % 4 == 0);
-
           if (ideal <= MaxRegisters)
             return ideal;
 
-          // Look for the largest divisor of the ideal register count that is smaller than MaxRegisters - 1 and divisible by 4
-          for (int divisor = MaxRegisters - 2; divisor > 1; --divisor)
-            if (ideal % divisor == 0 && divisor % 4 == 0)
+          // Look for the largest divisor of the ideal register count that is less than or equal to MaxRegisters
+          for (int divisor = MaxRegisters; divisor > 0; --divisor)
+            if (ideal % divisor == 0 && divisor % DivisibleBy == 0)
               return divisor;
           assert(false);
       }
 
-      template <typename SIMDRegisterType,
-                typename LaneType,
-                int      NumLanes,
-                int      MaxRegisters>
-      static constexpr int BestRegisterCountPsqt()
-      {
-          #define RegisterSize  sizeof(SIMDRegisterType)
-          #define LaneSize      sizeof(LaneType)
-
-          static_assert(RegisterSize >= LaneSize);
-          static_assert(MaxRegisters <= NumRegistersSIMD);
-          static_assert(MaxRegisters > 0);
-          static_assert(NumRegistersSIMD > 0);
-          static_assert(RegisterSize % LaneSize == 0);
-          static_assert((NumLanes * LaneSize) % RegisterSize == 0);
-
-          const int ideal = (NumLanes * LaneSize) / RegisterSize;
-          if (ideal <= MaxRegisters)
-            return ideal;
-
-          // Look for the largest divisor of the ideal register count that is smaller than MaxRegisters
-          for (int divisor = MaxRegisters; divisor > 1; --divisor)
-            if (ideal % divisor == 0)
-              return divisor;
-
-          return 1;
-      }
-
-      static constexpr int NumRegs     = BestRegisterCount<vec_t, WeightType, TransformedFeatureDimensions, NumRegistersSIMD>();
-      static constexpr int NumPsqtRegs = BestRegisterCountPsqt<psqt_vec_t, PSQTWeightType, PSQTBuckets, NumRegistersSIMD>();
       #if defined(__GNUC__)
       #pragma GCC diagnostic pop
       #endif
@@ -257,10 +226,6 @@ namespace Stockfish::Eval::NNUE {
 
     #ifdef VECTOR
     static constexpr IndexType SimdWeightWidth = sizeof(vec_t) / sizeof(WeightType);
-    static constexpr IndexType TileHeight = NumRegs * SimdWeightWidth;
-    static constexpr IndexType PsqtTileHeight = NumPsqtRegs * sizeof(psqt_vec_t) / 4;
-    static_assert(HalfDimensions % TileHeight == 0, "TileHeight must divide HalfDimensions");
-    static_assert(PSQTBuckets % PsqtTileHeight == 0, "PsqtTileHeight must divide PSQTBuckets");
     #endif
 
    public:
@@ -283,8 +248,6 @@ namespace Stockfish::Eval::NNUE {
     /*
       Interleave first halve and second halve.
     */
-    // 0 1 2 3 4 5 6 7
-    // 0 4 1 5 2 6 3 7
     static IndexType get_weight_index(IndexType i) {
   #ifdef VECTOR
       auto col = i / HalfDimensions;
@@ -383,6 +346,14 @@ namespace Stockfish::Eval::NNUE {
       assert(states_to_update[N-1] == nullptr);
 
   #ifdef VECTOR
+      static constexpr IndexType NumRegs = Output ? BestRegisterCount<vec_t, WeightType, TransformedFeatureDimensions, NumRegistersSIMD - 2, 4>() :
+                                                    BestRegisterCount<vec_t, WeightType, TransformedFeatureDimensions, NumRegistersSIMD, 1>();
+      static constexpr IndexType NumPsqtRegs = BestRegisterCount<psqt_vec_t, PSQTWeightType, PSQTBuckets, NumRegistersSIMD, 1>();
+      static constexpr IndexType TileHeight = NumRegs * SimdWeightWidth;
+      static constexpr IndexType PsqtTileHeight = NumPsqtRegs * sizeof(psqt_vec_t) / 4;
+      static_assert(HalfDimensions % TileHeight == 0, "TileHeight must divide HalfDimensions");
+      static_assert(PSQTBuckets % PsqtTileHeight == 0, "PsqtTileHeight must divide PSQTBuckets");
+
       // Gcc-10.2 unnecessarily spills AVX2 registers if this array
       // is defined in the VECTOR code below, once in each branch
       vec_t acc[NumRegs];
@@ -575,6 +546,14 @@ namespace Stockfish::Eval::NNUE {
     template<Color Perspective, bool Output>
     void update_accumulator_refresh(const Position& pos, OutputType* output) const {
   #ifdef VECTOR
+      static constexpr IndexType NumRegs = Output ? BestRegisterCount<vec_t, WeightType, TransformedFeatureDimensions, NumRegistersSIMD - 2, 4>() :
+                                                    BestRegisterCount<vec_t, WeightType, TransformedFeatureDimensions, NumRegistersSIMD, 1>();
+      static constexpr IndexType NumPsqtRegs = BestRegisterCount<psqt_vec_t, PSQTWeightType, PSQTBuckets, NumRegistersSIMD, 1>();
+      static constexpr IndexType TileHeight = NumRegs * SimdWeightWidth;
+      static constexpr IndexType PsqtTileHeight = NumPsqtRegs * sizeof(psqt_vec_t) / 4;
+      static_assert(HalfDimensions % TileHeight == 0, "TileHeight must divide HalfDimensions");
+      static_assert(PSQTBuckets % PsqtTileHeight == 0, "PsqtTileHeight must divide PSQTBuckets");
+
       // Gcc-10.2 unnecessarily spills AVX2 registers if this array
       // is defined in the VECTOR code below, once in each branch
       vec_t acc[NumRegs];
