@@ -246,7 +246,7 @@ namespace Stockfish::Eval::NNUE {
     }
 
     /*
-      Interleave first halve and second halve.
+      Interleave first halve and second halve of each column.
     */
     static IndexType get_weight_index(IndexType i) {
   #ifdef VECTOR
@@ -346,6 +346,7 @@ namespace Stockfish::Eval::NNUE {
       assert(states_to_update[N-1] == nullptr);
 
   #ifdef VECTOR
+      // Leave space for Zero and One vectors if writing to output
       static constexpr IndexType NumRegs = Output ? BestRegisterCount<vec_t, WeightType, TransformedFeatureDimensions, NumRegistersSIMD - 2, 4>() :
                                                     BestRegisterCount<vec_t, WeightType, TransformedFeatureDimensions, NumRegistersSIMD, 1>();
       static constexpr IndexType NumPsqtRegs = BestRegisterCount<psqt_vec_t, PSQTWeightType, PSQTBuckets, NumRegistersSIMD, 1>();
@@ -434,6 +435,7 @@ namespace Stockfish::Eval::NNUE {
         }
         if (Output)
         {
+          // Compute activation and product pooling, write the result to output.
           vec_t Zero = vec_zero();
           vec_t One = vec_set_16(127);
           vec_t* out = reinterpret_cast<vec_t*>(&output[j * TileHeight / 2]);
@@ -525,7 +527,7 @@ namespace Stockfish::Eval::NNUE {
             st->accumulator.psqtAccumulation[Perspective][k] += psqtWeights[index * PSQTBuckets + k];
         }
       }
-      if (output != nullptr)
+      if (Output)
       {
         for (IndexType j = 0; j < HalfDimensions / 2; ++j)
         {
@@ -546,6 +548,7 @@ namespace Stockfish::Eval::NNUE {
     template<Color Perspective, bool Output>
     void update_accumulator_refresh(const Position& pos, OutputType* output) const {
   #ifdef VECTOR
+      // Leave space for Zero and One vectors if writing to output
       static constexpr IndexType NumRegs = Output ? BestRegisterCount<vec_t, WeightType, TransformedFeatureDimensions, NumRegistersSIMD - 2, 4>() :
                                                     BestRegisterCount<vec_t, WeightType, TransformedFeatureDimensions, NumRegistersSIMD, 1>();
       static constexpr IndexType NumPsqtRegs = BestRegisterCount<psqt_vec_t, PSQTWeightType, PSQTBuckets, NumRegistersSIMD, 1>();
@@ -650,7 +653,7 @@ namespace Stockfish::Eval::NNUE {
           accumulator.psqtAccumulation[Perspective][k] += psqtWeights[index * PSQTBuckets + k];
       }
 
-      if (output != nullptr)
+      if (Output)
       {
         for (IndexType j = 0; j < HalfDimensions / 2; ++j)
         {
