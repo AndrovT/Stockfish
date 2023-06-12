@@ -34,8 +34,43 @@
 */
 
 namespace Stockfish::Eval::NNUE::Layers {
+#if defined (USE_AVX512)
+  alignas(CacheLineSize) static inline const std::array<std::uint16_t, 32> indices = [](){
+    std::array<std::uint16_t, 32> v{};
+    for (int i = 0; i < 32; ++i)
+      v[i] = i;
+    return v;
+  }();
+  // Find indices of nonzero numbers in an int32_t array
+  template<const IndexType InputDimensions>
+  void find_nnz(const std::int32_t* input, std::uint16_t* out, IndexType& count_out) {
+    using vec_t = __m512i;
+    #define vec_nnz(a) _mm512_cmpgt_epi32_mask(a, _mm512_setzero_si512())
+    constexpr IndexType InputSimdWidth = sizeof(vec_t) / sizeof(std::int32_t);
+    constexpr IndexType ChunkSize = InputSimdWidth * 2;
+    constexpr IndexType NumChunks = InputDimensions / ChunkSize;
 
-#if defined(USE_SSSE3)
+    const auto inputVector = reinterpret_cast<const vec_t*>(input);
+    IndexType count = 0;
+    vec_t base = *reinterpret_cast<const vec_t*>(&indices[0]);
+    vec_t increment = _mm512_set1_epi16(32);
+    for (IndexType i = 0; i < NumChunks; ++i)
+    {
+      // bitmask of nonzero values in this chunk
+      std::uint32_t nnz = 0;
+      for (IndexType j = 0; j < 2; ++j)
+      {
+        const vec_t inputChunk = inputVector[i * 2 + j];
+        nnz |= (std::uint32_t)vec_nnz(inputChunk) << (j * InputSimdWidth);
+      }
+      _mm512_mask_compressstoreu_epi16(reinterpret_cast<vec_t*>(out + count), nnz, base);
+      count += __builtin_popcountl(nnz);
+      base += increment;
+    }
+    count_out = count;
+  }
+# undef vec_nnz
+#elif defined (USE_SSSE3)
   alignas(CacheLineSize) static inline const std::array<std::array<std::uint16_t, 8>, 256> lookup_indices = [](){
       std::array<std::array<std::uint16_t, 8>, 256> v{};
       for (int i = 0; i < 256; ++i)
