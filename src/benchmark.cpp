@@ -122,6 +122,7 @@ vector<string> setup_bench(const Position& current, istream& is) {
   string fenFile   = (is >> token) ? token : "default";
   string limitType = (is >> token) ? token : "depth";
   string evalType  = (is >> token) ? token : "mixed";
+  string logFile   = (is >> token) ? token : "";
 
   go = limitType == "eval" ? "eval" : "go " + limitType + " " + limit;
 
@@ -170,6 +171,9 @@ vector<string> setup_bench(const Position& current, istream& is) {
       }
 
   list.emplace_back("setoption name Use NNUE value true");
+
+  if (logFile != "")
+      dbg_start_activations_log(logFile);
 
   return list;
 }
