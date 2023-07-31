@@ -62,7 +62,7 @@ namespace Stockfish::Eval::NNUE::Layers {
 
 # elif defined(USE_NEON)
     constexpr IndexType NumChunks = ceil_to_multiple<IndexType>(InputDimensions, 16) / 16;
-    const auto inputVector = reinterpret_cast<const int8x8_t*>(input);
+    const auto inputVector = reinterpret_cast<const int8x16_t*>(input);
 # endif
 
     for (IndexType i = 0; i < OutputDimensions; ++i) {
@@ -121,10 +121,10 @@ namespace Stockfish::Eval::NNUE::Layers {
 
 # elif defined(USE_NEON)
       int32x4_t sum = {biases[i]};
-      const auto row = reinterpret_cast<const int8x8_t*>(&weights[offset]);
+      const auto row = reinterpret_cast<const int8x16_t*>(&weights[offset]);
       for (IndexType j = 0; j < NumChunks; ++j) {
-        int16x8_t product = vmull_s8(inputVector[j * 2], row[j * 2]);
-        product = vmlal_s8(product, inputVector[j * 2 + 1], row[j * 2 + 1]);
+        int16x8_t product = vmull_high_s8(inputVector[j], row[j]);
+        product = vmlal_s8(product, inputVector[j], row[j]);
         sum = vpadalq_s16(sum, product);
       }
       output[i] = sum[0] + sum[1] + sum[2] + sum[3];
