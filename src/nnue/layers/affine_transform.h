@@ -124,7 +124,7 @@ namespace Stockfish::Eval::NNUE::Layers {
       const auto row = reinterpret_cast<const int8x16_t*>(&weights[offset]);
       for (IndexType j = 0; j < NumChunks; ++j) {
         int16x8_t product = vmull_high_s8(inputVector[j], row[j]);
-        product = vmlal_s8(product, inputVector[j], row[j]);
+        product = vmlal_s8(product, vget_low_s8(inputVector[j]), vget_low_s8(row[j]));
         sum = vpadalq_s16(sum, product);
       }
       output[i] = sum[0] + sum[1] + sum[2] + sum[3];
