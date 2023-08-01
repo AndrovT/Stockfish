@@ -74,7 +74,7 @@ namespace Stockfish::Eval::NNUE::Layers {
 #elif defined (USE_NEON)
     using vec_t = int32x4_t;
     static const std::uint32_t Mask[4] = {1, 2, 4, 8};
-    #define vec_nnz(a) Simd::neon_m128_reduce_add_epi32(vandq_u32(vtstq_u32(a, a), vld1q_u32(Mask)))
+    #define vec_nnz(a) vaddvq_u32(vandq_u32(vtstq_u32(a, a), vld1q_u32(Mask)))
     using vec128_t = int16x8_t;
     #define vec128_zero vdupq_n_u16(0)
     #define vec128_set_16(a) vdupq_n_u16(a)
@@ -105,9 +105,9 @@ namespace Stockfish::Eval::NNUE::Layers {
       for (IndexType j = 0; j < OutputsPerChunk; ++j)
       {
         const auto lookup = (nnz >> (j * 8)) & 0xFF;
-        const auto offsets = vec128_load(reinterpret_cast<const vec128_t*>(&lookup_indices[0xff]));
+        const auto offsets = vec128_load(reinterpret_cast<const vec128_t*>(&lookup_indices[lookup]));
         vec128_storeu(reinterpret_cast<vec128_t*>(out + count), vec128_add(base, offsets));
-        count += popcount(0xff);
+        count += popcount(lookup);
         base = vec128_add(base, increment);
       }
     }
