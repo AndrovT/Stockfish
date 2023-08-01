@@ -73,7 +73,8 @@ namespace Stockfish::Eval::NNUE::Layers {
     #define vec128_add(a, b) _mm_add_epi16(a, b)
 #elif defined (USE_NEON)
     using vec_t = int32x4_t;
-    #define vec_nnz(a) Simd::neon_m128_reduce_add_epi32(vandq_u32(vtstq_u32(a, a), (int32x4_t){1, 2, 4, 8}))
+    static constexpr int32x4_t Mask = {1, 2, 4, 8};
+    #define vec_nnz(a) Simd::neon_m128_reduce_add_epi32(vandq_u32(vtstq_u32(a, a), {1, 2, 4, 8}))
     using vec128_t = int16x8_t;
     #define vec128_zero vdupq_n_u16(0)
     #define vec128_set_16(a) vdupq_n_u16(a)
@@ -217,8 +218,8 @@ namespace Stockfish::Eval::NNUE::Layers {
       #define vec_set_32(a) vreinterpretq_s8_u32(vdupq_n_u32(a))
       #define vec_add_dpbusd_32 Simd::dotprod_m128_add_dpbusd_epi32
 #elif defined (USE_NEON)
-      using invec_t = __m128i;
-      using outvec_t = __m128i;
+      using invec_t = int8x16_t;
+      using outvec_t = int32x4_t;
       #define vec_set_32(a) vreinterpretq_s8_u32(vdupq_n_u32(a))
       #define vec_add_dpbusd_32 Simd::neon_m128_add_dpbusd_epi32
 #endif
