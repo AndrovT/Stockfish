@@ -65,7 +65,6 @@ namespace Stockfish::Eval::NNUE::Layers {
         using vec_t = __m128i;
         #define vec_nnz(a) _mm_movemask_ps(_mm_castsi128_ps(_mm_cmpgt_epi32(a, _mm_setzero_si128())))
     #endif
-    using vec128_t = __m128i;
     #define vec128_zero _mm_setzero_si128()
     #define vec128_set_16(a) _mm_set1_epi16(a)
     #define vec128_load(a) _mm_load_si128(a)
@@ -73,8 +72,8 @@ namespace Stockfish::Eval::NNUE::Layers {
     #define vec128_add(a, b) _mm_add_epi16(a, b)
 #elif defined (USE_NEON)
     using vec_t = int32x4_t;
-    static constexpr int32x4_t Mask = {1, 2, 4, 8};
-    #define vec_nnz(a) Simd::neon_m128_reduce_add_epi32(vandq_u32(vtstq_u32(a, a), Mask))
+    static const std::uint32_t Mask[4] = {1, 2, 4, 8};
+    #define vec_nnz(a) Simd::neon_m128_reduce_add_epi32(vandq_u32(vtstq_u32(a, a), vld1q_u32(Mask)))
     using vec128_t = int16x8_t;
     #define vec128_zero vdupq_n_u16(0)
     #define vec128_set_16(a) vdupq_n_u16(a)
