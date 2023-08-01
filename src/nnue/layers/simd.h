@@ -257,7 +257,7 @@ namespace Stockfish::Simd {
 #   endif
     }
 
-    [[maybe_unused]] static int neon_m128_reduce_add_epu32(uint32x4_t s) {
+    [[maybe_unused]] static unsigned neon_m128_reduce_add_epu32(uint32x4_t s) {
 #   if USE_NEON >= 8
       return vaddvq_u32(s);
 #   else
