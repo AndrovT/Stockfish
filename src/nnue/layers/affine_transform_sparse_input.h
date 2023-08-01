@@ -73,7 +73,7 @@ namespace Stockfish::Eval::NNUE::Layers {
     #define vec128_add(a, b) _mm_add_epi16(a, b)
 #elif defined (USE_NEON)
     using vec_t = int32x4_t;
-    constexpr uint32x4_t Mask = {1, 2, 4, 8};
+    constexpr uint32x4_t Mask = {2, 4, 8, 16};
     #define vec_nnz(a) vaddvq_u32(vandq_u32(vtstq_u32(a, a), Mask))
     using vec128_t = int16x8_t;
     #define vec128_zero vdupq_n_u16(0)
@@ -100,7 +100,7 @@ namespace Stockfish::Eval::NNUE::Layers {
       for (IndexType j = 0; j < InputsPerChunk; ++j)
       {
         const vec_t inputChunk = inputVector[i * InputsPerChunk + j];
-        nnz |= (unsigned)vec_nnz(inputChunk) << (j * InputSimdWidth);
+        nnz |= ((unsigned)vec_nnz(inputChunk) << (j * InputSimdWidth)) >> 1;
       }
       for (IndexType j = 0; j < OutputsPerChunk; ++j)
       {
