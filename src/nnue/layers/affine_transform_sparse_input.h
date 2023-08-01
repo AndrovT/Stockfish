@@ -77,8 +77,8 @@ namespace Stockfish::Eval::NNUE::Layers {
     using vec128_t = int16x8_t;
     #define vec128_zero vdupq_n_u16(0)
     #define vec128_set_16(a) vdupq_n_u16(a)
-    #define vec128_load(a) vld1_u16(reinterpret_cast<const std::uint16_t*>(a))
-    #define vec128_storeu(a, b) vst1_u16(reinterpret_cast<std::uint16_t*>(a), b)
+    #define vec128_load(a) vld1q_u16(reinterpret_cast<const std::uint16_t*>(a))
+    #define vec128_storeu(a, b) vst1q_u16(reinterpret_cast<std::uint16_t*>(a), b)
     #define vec128_add(a, b) vaddq_u16(a, b)
 #endif
     constexpr IndexType InputSimdWidth = sizeof(vec_t) / sizeof(std::int32_t);
