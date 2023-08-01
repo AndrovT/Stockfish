@@ -73,8 +73,8 @@ namespace Stockfish::Eval::NNUE::Layers {
     #define vec128_add(a, b) _mm_add_epi16(a, b)
 #elif defined (USE_NEON)
     using vec_t = int32x4_t;
-    constexpr uint32x4_t Mask = {1, 2, 4, 8};
-    #define vec_nnz(a) vaddvq_u32(vandq_u32(vtstq_u32(a, a), Mask))
+    static const std::uint32_t Mask[4] = {1, 2, 4, 8};
+    #define vec_nnz(a) Simd::neon_m128_reduce_add_epu32(vandq_u32(vtstq_u32(a, a), vld1q_u32(Mask)))
     using vec128_t = int16x8_t;
     #define vec128_zero vdupq_n_u16(0)
     #define vec128_set_16(a) vdupq_n_u16(a)
