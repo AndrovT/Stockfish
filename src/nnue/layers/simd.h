@@ -297,9 +297,10 @@ namespace Stockfish::Simd {
         int32x4_t& acc,
         int8x16_t a, int8x16_t b) {
 
-      int16x8_t product = vmull_high_s8(a, b);
-      product = vmlal_s8(product, vget_low_s8(a), vget_low_s8(b));
-      acc = vpadalq_s16(acc, product);
+      int16x8_t product0 = vmull_s8(vget_low_s8(a), vget_low_s8(b));
+      int16x8_t product1 = vmull_high_s8(a, b);
+      auto sum = vpaddq_s16(product0, product1);
+      acc = vpadalq_s16(acc, sum);
     }
 
 #endif
