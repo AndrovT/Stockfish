@@ -35,7 +35,7 @@
 
 namespace Stockfish::Eval::NNUE::Layers {
 
-#if (USE_SSSE3 | USE_NEON)
+#if (USE_SSSE3 | (USE_NEON >= 8))
   alignas(CacheLineSize) static inline const std::array<std::array<std::uint16_t, 8>, 256> lookup_indices = [](){
     std::array<std::array<std::uint16_t, 8>, 256> v{};
     for (unsigned i = 0; i < 256; ++i)
@@ -74,7 +74,7 @@ namespace Stockfish::Eval::NNUE::Layers {
 #elif defined (USE_NEON)
     using vec_t = int32x4_t;
     static const std::uint32_t Mask[4] = {1, 2, 4, 8};
-    #define vec_nnz(a) Simd::neon_m128_reduce_add_epu32(vandq_u32(vtstq_u32(a, a), vld1q_u32(Mask)))
+    #define vec_nnz(a) vaddvq_u32(vandq_u32(vtstq_u32(a, a), vld1q_u32(Mask)))
     using vec128_t = int16x8_t;
     #define vec128_zero vdupq_n_u16(0)
     #define vec128_set_16(a) vdupq_n_u16(a)
@@ -140,7 +140,7 @@ namespace Stockfish::Eval::NNUE::Layers {
     static constexpr IndexType PaddedOutputDimensions =
       ceil_to_multiple<IndexType>(OutputDimensions, MaxSimdWidth);
 
-#if (USE_SSSE3 | USE_NEON)
+#if (USE_SSSE3 | (USE_NEON >= 8))
     static constexpr IndexType ChunkSize = 4;
 #else
     static constexpr IndexType ChunkSize = 1;
@@ -167,7 +167,7 @@ namespace Stockfish::Eval::NNUE::Layers {
 
     static constexpr IndexType get_weight_index(IndexType i)
     {
-#if (USE_SSSE3 | USE_NEON)
+#if (USE_SSSE3 | (USE_NEON >= 8))
       return get_weight_index_scrambled(i);
 #else
       return i;
@@ -196,7 +196,7 @@ namespace Stockfish::Eval::NNUE::Layers {
     void propagate(
         const InputType* input, OutputType* output) const {
 
-#if (USE_SSSE3 | USE_NEON)
+#if (USE_SSSE3 | (USE_NEON >= 8))
 #if defined (USE_AVX512)
       using invec_t = __m512i;
       using outvec_t = __m512i;
