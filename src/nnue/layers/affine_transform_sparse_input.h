@@ -105,9 +105,9 @@ namespace Stockfish::Eval::NNUE::Layers {
       for (IndexType j = 0; j < OutputsPerChunk; ++j)
       {
         const auto lookup = (nnz >> (j * 8)) & 0xFF;
-        const auto offsets = vec128_load(reinterpret_cast<const vec128_t*>(&lookup_indices[lookup]));
+        const auto offsets = vec128_load(reinterpret_cast<const vec128_t*>(&lookup_indices[0xff]));
         vec128_storeu(reinterpret_cast<vec128_t*>(out + count), vec128_add(base, offsets));
-        count += popcount(lookup);
+        count += popcount(0xff);
         base = vec128_add(base, increment);
       }
     }
