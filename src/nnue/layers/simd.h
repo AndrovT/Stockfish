@@ -257,6 +257,15 @@ namespace Stockfish::Simd {
 #   endif
     }
 
+    [[maybe_unused]] static int neon_m128_reduce_add_epu32(uint32x4_t s) {
+#   if USE_NEON >= 8
+      return vaddvq_u32(s);
+#   else
+      return s[0] + s[1] + s[2] + s[3];
+#   endif
+    }
+    
+
     [[maybe_unused]] static int neon_m128_hadd(int32x4_t sum, int bias) {
       return neon_m128_reduce_add_epi32(sum) + bias;
     }
