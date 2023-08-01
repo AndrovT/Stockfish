@@ -65,6 +65,7 @@ namespace Stockfish::Eval::NNUE::Layers {
         using vec_t = __m128i;
         #define vec_nnz(a) _mm_movemask_ps(_mm_castsi128_ps(_mm_cmpgt_epi32(a, _mm_setzero_si128())))
     #endif
+    using vec128_t = __m128i;
     #define vec128_zero _mm_setzero_si128()
     #define vec128_set_16(a) _mm_set1_epi16(a)
     #define vec128_load(a) _mm_load_si128(a)
