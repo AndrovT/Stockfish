@@ -64,6 +64,7 @@ class Thread {
     Depth                 rootDepth, completedDepth;
     Value                 rootDelta;
     Value                 rootSimpleEval;
+    Color                 rootSideToMove;
     CounterMoveHistory    counterMoves;
     ButterflyHistory      mainHistory;
     CapturePieceToHistory captureHistory;
